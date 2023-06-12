@@ -1,0 +1,63 @@
+#!/bin/sh
+
+usage () {
+    cat 1>&2 <<EOF
+Usage: $(basename $0) [options] host [command]
+Options:
+  -d destination            Remote destination directory
+  -s source                 Local source directory
+
+Syncs git-tracked files with a remote host and executes a command.
+EOF
+}
+
+set -e
+
+src=$PWD
+
+# Get basename of the working directory
+dst=${PWD##*/}
+dst=${dst:-/}
+
+if [ $# -eq 0 ]; then
+    usage
+    exit 1
+fi
+
+while getopts ":d:s:" opt; do
+    case $opt in
+        d)
+            dst=$OPTARG
+            ;;
+        s)
+            src=$OPTARG
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG" 1>&2
+            usage
+            exit 1
+            ;;
+        :)
+            echo "Option -$OPTARG requires an argument" 1>&2
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+shift $(( OPTIND - 1 ))
+
+host=$1
+
+shift
+
+tmpfile=$(mktemp)
+git ls-files --recurse-submodules > "$tmpfile"
+
+rsync -azP --files-from="$tmpfile" "$src"/ "$host":"$dst"
+
+rm "$tmpfile"
+
+if [ ! -z "$*" ]; then
+    ssh "$host" "cd $dst && $*"
+fi
